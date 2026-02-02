@@ -1,0 +1,595 @@
+---
+title: "Uber Premium Booking Status Prediction"
+author: "MGT256 Group 4"
+date: '`r Sys.Date()`'
+output:
+  pdf_document:
+    toc: true
+    toc_depth: '3'
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 3
+    number_sections: true
+subtitle: "Multi-Class Classification Analysis"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+	echo = TRUE,
+	message = FALSE,
+	warning = FALSE
+)
+```
+
+
+# Abstract
+This analysis aims to predict Uber Premium Booking Status.
+
+- Total samples: 20,795 rides
+- Target variable: Booking Status with 2 categories (Completed and Non-Completed, 
+including Cancelled by Driver, Cancelled by Customer, No Driver Found and Incomplete)
+- Selected 7 core predictors: Booking Hour, Booking Month, Weekday, Vehicle Type, 
+Traffic Condition and Booking Platform, Average Pickup Time.
+
+Data Structure
+
+- Source: Two datasets (booking_premium.csv, ride_premium.csv)
+- Merge Key: Booking.ID
+- Time Period: 2024-01-01 to 2024-12-30
+- Features: 20+ variables including temporal, categorical, and numeric
+
+
+# Data Import and Preparation
+
+##  Load Required Libraries
+```{r libraries}
+
+# Clear environment
+rm(list = ls())
+
+# Data manipulation
+library(dplyr)
+library(lubridate)
+library(tidyr)
+library(stringr)
+library(caret)    # For createDataPartition
+
+
+# Visualization
+library(ggplot2)
+library(pROC)     # For ROC curve and AUC
+
+
+```
+
+## Import and Merge Data
+```{r}
+
+# Import datasets
+booking_data <- read.csv('booking_premium.csv')
+ride_data <- read.csv('ride_premium.csv')
+
+# Merge datasets by Booking ID
+merged_data <- merge(booking_data,ride_data,by='Booking.ID')
+
+```
+
+## Remove leading/trailing spaces from all character columns
+
+```{r}
+
+# Check if column is character 'TRUE'
+char_cols <- sapply(merged_data, is.character)
+
+# Clean only columns where 'char_cols = TRUE' (remove extra spaces)
+merged_data[char_cols] <- lapply(merged_data[char_cols], function(x) {
+  x <- str_trim(x)        # Remove leading/trailing spaces
+  x <- str_squish(x)      # Replace multiple spaces with single space
+  return(x)
+  })
+
+```
+
+## Standardize missing values and negative values to NA
+
+```{r}
+
+# Define all representations of missing values
+missing_values <- c("", " ", "null", "NA", "N/A", "na", "--", "nan", "NaN")
+
+# Replace all missing value representations with NA
+merged_data[] <- lapply(merged_data, function(column) {
+  column[column %in% missing_values] <- NA
+  return(column)
+})
+
+# Replace all negative values in Avg.VTAT with NA
+merged_data <- merged_data %>%
+    mutate(
+        Avg.VTAT = ifelse(as.numeric(Avg.VTAT) < 0, NA, as.numeric(Avg.VTAT))
+    )
+
+```
+
+## Handle target variable (Booking.Status)
+
+```{r}
+
+# Check Booking.Status
+sum(is.na(merged_data$Booking.Status))
+table(merged_data$Booking.Status)
+
+# Create binary target:
+merged_data$Target <- ifelse(merged_data$Booking.Status == "Completed", 
+                             "Completed", "Not Completed")
+
+# Ensure Class is a factor with "Good" first and "Bad" second.
+# ------------------------------------------------------------
+# In logistic regression (glm with family = binomial),
+# predicted probabilities (type = "response") correspond to
+# the *second* level of the outcome factor.
+#
+# By setting the levels as c("Good", "Bad"):
+#   - The model will output predicted probabilities for the "Bad" class,
+#     which is the event of interest (the important/risk class).
+#   - These probabilities can be directly interpreted as P(Bad | predictors).
+#   - Sensitivity and specificity can then be computed with respect to
+#     correctly identifying "Bad" credit applicants.
+#
+# If the order were reversed, the model would instead return P(Good),
+# which would flip the interpretation of all predicted probabilities.
+
+# Convert to factor (Completed first, Not Completed second)
+merged_data$Target <- factor(merged_data$Target, 
+                             levels = c("Completed", "Not Completed"))
+levels(merged_data$Target)
+
+
+# Target distribution
+target_counts <- table(merged_data$Target)
+target_prop <- prop.table(target_counts) * 100
+
+# Plot distribution
+barplot(target_counts,
+        main = "Booking Status Distribution",
+        col = c("lightblue", "coral"),
+        ylab = "Number of Bookings",
+        cex.main = 1.8,
+        cex.axis = 1.3,
+        cex.names = 1.3,
+        ylim = c(0, max(target_counts) * 1.15))
+```
+
+## Standardize Date format and extract features
+
+```{r}
+
+# Function to parse 3 date formats found in the data
+
+parse_date <- function(date_string) {
+    formats <- c(
+        "%d-%b-%Y",      # 03-Mar-2024
+        "%Y-%m-%d",      # 2024-01-15
+        "%m/%d/%Y"       # 12/15/2024
+        )
+    
+    result <- NA         # in failed cases
+    for(fmt in formats) {
+        parsed <- suppressWarnings(as.Date(date_string, format = fmt))
+        if(!is.na(parsed)) {
+            result <- parsed
+            break # Stop the loop once we find a format that works
+        }
+        }
+    return(result)
+    }
+
+# Apply the date parsing function
+merged_data$Date_Parsed <- sapply(merged_data$Date, parse_date) %>%
+    as.Date(origin = "1970-01-01")
+
+# Extract temporal features
+merged_data <- merged_data %>%
+    mutate(
+        Weekday = wday(Date_Parsed, label = TRUE),
+        Month = month(Date_Parsed)
+    )
+```
+
+## Standardize Time format and extract Hour
+
+```{r}
+
+# Function to parse 3 time formats found in the data
+
+parse_time <- function(time_string) {
+    formats <- c(
+        "%H:%M:%S",      # 13:15:17
+        "%H:%M",         # 21:15
+        "%I:%M %p"       # 2:34 AM, 10:22 PM
+        )
+    result <- NA         # in failed cases
+    for(fmt in formats) {
+        parsed <- suppressWarnings(strptime(time_string, format = fmt))
+        if(!is.na(parsed)) {
+            result <- (as.numeric(format(parsed, "%H"))) # Extract hour (0-23)
+            break
+        }
+        }
+    return(result)
+    }
+
+# Apply the function to extract hour from Time column
+merged_data$Hour <- sapply(merged_data$Time, parse_time)
+
+```
+
+## Check NA counts in predictors
+
+```{r}
+
+sum(is.na(merged_data$Hour))
+sum(is.na(merged_data$Weekday))
+sum(is.na(merged_data$Month))
+sum(is.na(merged_data$Vehicle.Type))
+sum(is.na(merged_data$Booking.Platform))
+sum(is.na(merged_data$Traffic.Level))
+sum(is.na(merged_data$Avg.VTAT))
+
+```
+
+## Remove rows with NA in Traffic.Level and Avg.VTAT
+
+```{r}
+
+merged_data <- merged_data[!is.na(merged_data$Traffic.Level), ]
+merged_data <- merged_data[!is.na(merged_data$Avg.VTAT), ]
+
+```
+
+## Convert Categorical Variables to Factors
+
+```{r}
+
+# List of categorical predictors
+categorical <- c("Vehicle.Type", "Traffic.Level", "Booking.Platform", "Weekday")
+
+# Convert to factors
+merged_data[categorical] <- sapply(merged_data[categorical], as.factor)
+```
+
+# Data Visualizations
+
+## Graph 1: Cancellation Rate by Hour
+```{r}
+hourly <- merged_data %>%
+  group_by(Hour) %>%
+  summarise(Cancel_Rate = mean(Target == "Not Completed") * 100)
+
+plot(hourly$Hour, hourly$Cancel_Rate,
+     type = "b",
+     col = "steelblue",
+     lwd = 3,
+     pch = 19,
+     cex = 1.5,
+     main = "Cancellation Rate by Hour",
+     xlab = "Hour (0-23)",
+     ylab = "Cancellation Rate (%)",
+     cex.main = 1.8,
+     cex.axis = 1.3,
+     cex.lab = 1.3,
+     ylim = c(25, 45))
+grid()
+```
+
+## Graph 2: Avg.VTAT Distribution
+```{r}
+
+hist(merged_data$Avg.VTAT,
+     breaks = 30,
+     col = "skyblue",
+     border = "white",
+     main = "Distribution of Average Pickup Time",
+     xlab = "Avg.VTAT (minutes)",
+     ylab = "Frequency",
+     cex.main = 1.8,
+     cex.axis = 1.3,
+     cex.lab = 1.3)
+
+abline(v = mean(merged_data$Avg.VTAT), col = "red", lwd = 3, lty = 2)
+```
+
+## Graph 3: Avg.VTAT by Booking Status
+```{r}
+
+boxplot(Avg.VTAT ~ Target, 
+        data = merged_data,
+        col = c("lightblue", "coral"),
+        main = "Avg Pickup Time by Booking Status",
+        xlab = "Status",
+        ylab = "Avg.VTAT (minutes)",
+        cex.main = 1.8,
+        cex.axis = 1.3,
+        cex.lab = 1.3)
+```
+
+## Graph 4: Booking Volume by Hour
+```{r}
+hour_count <- table(merged_data$Hour)
+
+barplot(hour_count,
+        col = "steelblue",
+        main = "Booking Volume by Hour",
+        xlab = "Hour (0-23)",
+        ylab = "Number of Bookings",
+        cex.main = 1.8,
+        cex.axis = 1.3,
+        cex.lab = 1.3)
+```
+
+
+# Logistic Regression
+
+## Stratified 60/40 Train-Validation Split
+
+```{r}
+
+set.seed(19)
+
+idx <- createDataPartition(merged_data$Target, p = 0.6, list = FALSE)
+train_data <- merged_data[idx, ]
+valid_data <- merged_data[-idx, ]
+
+print(prop.table(table(train_data$Target))*100)
+
+print(prop.table(table(valid_data$Target))*100)
+
+```
+
+## Fit Logistic Regression Models on training
+
+```{r}
+
+# Model 1: Original 
+model1 <- glm(Target ~ Hour + Weekday + Month + Vehicle.Type + 
+              Traffic.Level + Booking.Platform + Avg.VTAT,
+              data = train_data, family = binomial)
+
+# Model 2: Add polynomial terms
+model2 <- glm(Target ~ Hour + I(Hour^2) + Weekday + Month + 
+              Vehicle.Type + Traffic.Level + Booking.Platform + 
+              Avg.VTAT + I(Avg.VTAT^2),
+              data = train_data, family = binomial)
+
+# Model 3: Add interaction
+model3 <- glm(Target ~ Hour * Avg.VTAT + Weekday + Month + 
+              Vehicle.Type + Traffic.Level + Booking.Platform,
+              data = train_data, family = binomial)
+
+# Model 4: Log transform
+model4 <- glm(Target ~ Hour + Weekday + Month + 
+              Vehicle.Type + Traffic.Level + Booking.Platform + 
+              log(Avg.VTAT),
+              data = train_data, family = binomial)
+```
+
+
+## Predicted probability of "Not Completed" on validation
+
+```{r}
+
+# Predictions
+valid_prob1 <- predict(model1, newdata = valid_data, type = "response")
+valid_prob2 <- predict(model2, newdata = valid_data, type = "response")
+valid_prob3 <- predict(model3, newdata = valid_data, type = "response")
+valid_prob4 <- predict(model4, newdata = valid_data, type = "response")
+
+head(valid_prob1, 10)
+head(valid_prob2, 10)
+head(valid_prob3, 10)
+head(valid_prob4, 10)
+
+# Calculate AUC
+auc1 <- auc(roc(valid_data$Target, valid_prob1))
+auc2 <- auc(roc(valid_data$Target, valid_prob2))
+auc3 <- auc(roc(valid_data$Target, valid_prob3))
+auc4 <- auc(roc(valid_data$Target, valid_prob4))
+
+# Compare
+comparison <- data.frame(
+  Model = c("Original", "Polynomial", "Interaction", "Log Transform"),
+  AUC = c(auc1, auc2, auc3, auc4)
+)
+
+print(comparison)
+
+```
+
+## Find Optimal Threshold (Log Transform Model)
+
+```{r}
+
+# Compute the ROC curve
+roc_obj <- roc(response = valid_data$Target, predictor = valid_prob4)
+
+
+# Optimal threshold
+optimal_thres <- coords(roc_obj, x = "best",
+                      best.method = "closest.topleft",
+                      ret = "threshold")
+optimal_thres
+
+# Plot the ROC curve with the AUC displayed
+plot.roc(roc_obj, 
+         legacy.axes = TRUE, 
+         print.auc = TRUE,
+         main = "ROC — Log Transform Model", 
+         lwd = 3,
+         col = 'steelblue')
+```
+
+## Confusion Matrix at ROC-Chosen Threshold
+
+```{r}
+# Classify using optimal threshold
+pred_roc <- factor(ifelse(valid_prob4 > as.numeric(optimal_thres), 
+                          "Not Completed", "Completed"),
+                   levels = c("Completed", "Not Completed"))
+
+# Confusion matrix
+cm_roc <- confusionMatrix(pred_roc, 
+                          valid_data$Target, 
+                          positive = "Not Completed")
+print(cm_roc)
+```
+
+```{r}
+# ==========================================
+# KNN with Manual 10-Fold Cross-Validation
+# ==========================================
+
+library(class)   # for knn()
+library(caret)   # for createFolds() and confusionMatrix()
+
+# 1) Build KNN datasets from existing train_data / valid_data
+knn_train <- train_data %>%
+  dplyr::select(Target, Hour, Weekday, Month,
+                Vehicle.Type, Traffic.Level,
+                Booking.Platform, Avg.VTAT) %>%
+  na.omit()
+
+knn_valid <- valid_data %>%
+  dplyr::select(Target, Hour, Weekday, Month,
+                Vehicle.Type, Traffic.Level,
+                Booking.Platform, Avg.VTAT) %>%
+  na.omit()
+
+# Make sure Target is a factor with same levels
+knn_train$Target <- factor(knn_train$Target)
+knn_valid$Target <- factor(knn_valid$Target,
+                           levels = levels(knn_train$Target))
+
+# 2) Turn predictors into numeric matrix (dummy variables for factors)
+x_train <- model.matrix(
+  Target ~ Hour + Weekday + Month + Vehicle.Type +
+    Traffic.Level + Booking.Platform + Avg.VTAT,
+  data = knn_train
+)[, -1]  # drop intercept
+
+x_valid <- model.matrix(
+  Target ~ Hour + Weekday + Month + Vehicle.Type +
+    Traffic.Level + Booking.Platform + Avg.VTAT,
+  data = knn_valid
+)[, -1]
+
+y_train <- knn_train$Target
+y_valid <- knn_valid$Target
+
+# 3) Scale predictors (very important for KNN)
+x_train_scaled <- scale(x_train)
+x_valid_scaled <- scale(
+  x_valid,
+  center = attr(x_train_scaled, "scaled:center"),
+  scale  = attr(x_train_scaled, "scaled:scale")
+)
+
+# 4) 10-fold cross-validation to choose k
+set.seed(19)
+folds <- createFolds(y_train, k = 10, list = TRUE, returnTrain = FALSE)
+
+k_values   <- seq(3, 25, 2) # try odd k's: 3,5,7,...,25
+cv_results <- data.frame(k = k_values, Accuracy = NA_real_)
+
+for (i in seq_along(k_values)) {
+  k <- k_values[i]
+  acc_vec <- numeric(length(folds))
+  
+  for (f in seq_along(folds)) {
+    val_idx <- folds[[f]]
+    
+    x_tr <- x_train_scaled[-val_idx, , drop = FALSE]
+    y_tr <- y_train[-val_idx]
+    x_te <- x_train_scaled[val_idx, , drop = FALSE]
+    y_te <- y_train[val_idx]
+    
+    pred <- knn(
+      train = x_tr,
+      test  = x_te,
+      cl    = y_tr,
+      k     = k
+    )
+    
+    acc_vec[f] <- mean(pred == y_te)
+  }
+  
+  cv_results$Accuracy[i] <- mean(acc_vec)
+}
+
+cv_results
+
+# 5) Pick the best k
+best_k <- cv_results$k[which.max(cv_results$Accuracy)]
+best_k
+
+# 6) Train final KNN on full training data and evaluate on validation set
+knn_valid_pred <- knn(
+  train = x_train_scaled,
+  test  = x_valid_scaled,
+  cl    = y_train,
+  k     = best_k
+)
+
+# Confusion matrix on validation set
+knn_cm <- confusionMatrix(
+  knn_valid_pred,
+  y_valid,
+  positive = "Not Completed"
+)
+knn_cm
+```
+
+
+# Results and Discussion
+
+## Model Performance
+
+Using the log-transformed model with ROC-optimal threshold:
+
+- **AUC:** 0.5080757 (marginally above random guessing at 0.50)
+- **Accuracy:** 0.4884
+- **Sensitivity:** 0.5047 (detects ~50% of cancellations)
+- **Specificity:** 0.4804
+- **Precision:** 32.2% (only ~32% of predictions are correct)
+
+## Key Findings
+
+1. **Weak Predictive Power:** All models achieved AUC ~ 0.50-0.51, indicating 
+performance barely better than random guessing.
+
+2. **Model Transformations:** Polynomial terms, interactions, and 
+log transformation provided negligible improvements (+0.003 AUC), confirming the 
+fundamental limitation is weak features, not model specification.
+
+3. **Class Imbalance:** The 63%/37% split required threshold optimization, 
+but even with optimal thresholds, the model remains weak.
+
+## Limitations
+
+- Current features lack strong predictive signals
+- Missing key historical data: customer booking history, driver-side predictors,
+trip distance
+- Logistic regression may not capture complex patterns
+
+## Improvement
+
+1. **Feature Engineering:**
+   - Add customer-level features (past cancellation rate, booking frequency)
+   - Incorporate driver-side variables (acceptance rate, distance to pickup)
+
+2. **Advanced Methods:**
+   - Explore advanced models to capture relationships
+
+3. **Data Collection:**
+   - Enhance dataset with richer behavioral and contextual features
+   - Track customer engagement metrics and historical patterns
