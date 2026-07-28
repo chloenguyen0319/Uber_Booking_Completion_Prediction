@@ -1,0 +1,53 @@
+dataset,column,inferred_type,non_missing,distinct,min,max,examples,description
+booking_economy,Booking ID,string,126395,126395,,,"""CNR5884300"" | ""CNR1326809"" | ""CNR8494506""",Unique booking key used to join tables
+booking_economy,Date,string,126395,1095,,,2024-03-23 | 2024-11-29 | 2024-08-23,Booking date
+booking_economy,Time,mixed/text-numeric,126395,57333,,,12:29:38 | 18:01:39 | 08:56:10,Booking time
+booking_economy,Customer ID,string,126395,125527,,,"""CID1982111"" | ""CID4604802"" | ""CID9202816""",Customer identifier
+booking_economy,Vehicle Type,string,126395,7,,,eBike | Go Sedan | Auto,Requested vehicle category
+booking_economy,Pickup Location,string,126395,296,,,Palam Vihar | Shastri Nagar | Khandsa,Pickup zone/neighborhood
+booking_economy,Drop Location,string,126395,296,,,Jhilmil | Gurgaon Sector 56 | Malviya Nagar,Dropoff zone/neighborhood
+booking_economy,Payment Method,string,116610,10,,,null | UPI | Debit Card,Payment method
+booking_economy,Request Hour,mixed/text-numeric,125492,28,,,12 | 18 | 8,Hour of day (0–23) derived from Time
+booking_economy,Traffic Level,string,120889,4,,,High | Medium | Low,Inferred traffic level at request time
+booking_economy,Weather Condition,string,85944,5,,,Rain | Fog | Clear,Inferred weather context
+booking_economy,Booking Platform,string,126395,3,,,App | Phone | Web,Channel used to book (App/Web/Phone)
+ride_economy,Booking ID,string,126395,126395,,,"""CNR5884300"" | ""CNR1326809"" | ""CNR8494506""",Unique booking key used to join tables
+ride_economy,Booking Status,string,126395,8,,,No Driver Found | Incomplete | Completed,Final booking outcome
+ride_economy,Avg VTAT,mixed/text-numeric,126068,352,,,null | 4.9 | 13.4,Average vehicle time to arrive (min)
+ride_economy,Avg CTAT,mixed/text-numeric,126395,679,,,null | 14.0 | 25.8,Average confirmation time (min)
+ride_economy,Cancelled Rides by Customer,mixed/text-numeric,126395,3,,,null | 1 | -1,Flag if customer canceled
+ride_economy,Reason for cancelling by Customer,string,126395,11,,,null | Driver is not moving towards pickup location | Driver asked to cancel,Text reason recorded for customer cancel
+ride_economy,Cancelled Rides by Driver,mixed/text-numeric,126395,3,,,null | -1 | 1,Flag if driver canceled
+ride_economy,Driver Cancellation Reason,string,116725,10,,,null | Personal & Car related issues | Customer related issue,Text reason recorded for driver cancel
+ride_economy,Incomplete Rides,mixed/text-numeric,126395,3,,,null | 1 | -1,Flag if ride was incomplete
+ride_economy,Incomplete Rides Reason,string,126395,7,,,null | Vehicle Breakdown | Other Issue,Reason recorded for incomplete ride
+ride_economy,Booking Value,mixed/text-numeric,126395,3139,,,null | 237 | 627,Total fare estimate/charge
+ride_economy,Ride Distance,mixed/text-numeric,126395,7775,,,null | 5.73 | 13.58,Trip distance
+ride_economy,Driver Ratings,mixed/text-numeric,126395,44,,,null | 4.9 | 4.1,Rider’s rating of driver
+ride_economy,Customer Rating,mixed/text-numeric,126395,44,,,null | 4.9 | 4.3,Driver’s rating of rider
+booking_premium,Booking ID,string,22372,22372,,,"""CNR8906825"" | ""CNR3221338"" | ""CNR2806943""",Unique booking key used to join tables
+booking_premium,Date,string,22372,1042,,,2024-10-21 | 2024-07-01 | 2024-08-08,Booking date
+booking_premium,Time,mixed/text-numeric,22372,18454,,,17:17:25 | 10:51:16 | 06:34:38,Booking time
+booking_premium,Customer ID,string,22372,22347,,,"""CID2610914"" | ""CID2581698"" | ""CID7550481""",Customer identifier
+booking_premium,Vehicle Type,string,22372,4,,,Premier Sedan | Uber XL | Premier  Sedan,Requested vehicle category
+booking_premium,Pickup Location,string,22372,283,,,Central Secretariat | IGI Airport | Okhla,Pickup zone/neighborhood
+booking_premium,Drop Location,string,22372,282,,,Inderlok | Madipur | Barakhamba Road,Dropoff zone/neighborhood
+booking_premium,Payment Method,string,21048,10,,,UPI | Credit Card | null,Payment method
+booking_premium,Request Hour,mixed/text-numeric,22191,28,,,17 | 10 | 6,Hour of day (0–23) derived from Time
+booking_premium,Traffic Level,string,20592,4,,,High | Low | Medium,Inferred traffic level at request time
+booking_premium,Weather Condition,string,15231,5,,,Storm | Rain | Clear,Inferred weather context
+booking_premium,Booking Platform,string,22372,3,,,App | Web | Phone,Channel used to book (App/Web/Phone)
+ride_premium,Booking ID,string,22372,22372,,,"""CNR8906825"" | ""CNR3221338"" | ""CNR2806943""",Unique booking key used to join tables
+ride_premium,Booking Status,string,22372,8,,,Completed | No Driver Found | Incomplete,Final booking outcome
+ride_premium,Avg VTAT,mixed/text-numeric,22320,301,,,13.1 | 5.6 | 5.1,Average vehicle time to arrive (min)
+ride_premium,Avg CTAT,mixed/text-numeric,22372,534,,,28.5 | 27.5 | 20.7,Average confirmation time (min)
+ride_premium,Cancelled Rides by Customer,mixed/text-numeric,22372,3,,,null | -1 | 1,Flag if customer canceled
+ride_premium,Reason for cancelling by Customer,string,22372,11,,,null | AC is not working | Wrong Address,Text reason recorded for customer cancel
+ride_premium,Cancelled Rides by Driver,mixed/text-numeric,22372,3,,,null | 1 | -1,Flag if driver canceled
+ride_premium,Driver Cancellation Reason,string,21013,10,,,null | Customer related issue | More than permitted people in there,Text reason recorded for driver cancel
+ride_premium,Incomplete Rides,mixed/text-numeric,22372,3,,,null | 1 | -1,Flag if ride was incomplete
+ride_premium,Incomplete Rides Reason,string,22372,7,,,null | Other Issue | Customer Demand,Reason recorded for incomplete ride
+ride_premium,Booking Value,mixed/text-numeric,22372,1822,,,416 | 401 | 495,Total fare estimate/charge
+ride_premium,Ride Distance,mixed/text-numeric,22372,5111,,,34.02 | 21.97 | 10.23,Trip distance
+ride_premium,Driver Ratings,mixed/text-numeric,22372,43,,,4.6 | 4.9 | 3.8,Rider’s rating of driver
+ride_premium,Customer Rating,mixed/text-numeric,22372,43,,,5.0 | 4.3 | 4.2,Driver’s rating of rider
